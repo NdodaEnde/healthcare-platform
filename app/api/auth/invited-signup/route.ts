@@ -67,14 +67,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the organization name
-    const { data: organization, error: orgError } = await supabaseAdmin
+    const { data: organization, error: orgLookupError } = await supabaseAdmin
       .from("organizations")
       .select("name")
       .eq("id", invitation.organization_id)
       .single();
     
     // Get the role name
-    const { data: role, error: roleError } = await supabaseAdmin
+    const { data: role, error: roleLookupError } = await supabaseAdmin
       .from("system_roles")
       .select("name")
       .eq("id", invitation.role_id)
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
     console.log("User created successfully:", userData.user.id);
 
     // 4. Add the user to the organization with the specified role
-    const { error: orgError } = await supabaseAdmin
+    const { error: userOrgError } = await supabaseAdmin
       .from("user_organizations")
       .insert({
         user_id: userData.user.id,
@@ -114,8 +114,8 @@ export async function POST(request: NextRequest) {
         role_id: invitation.role_id
       });
 
-    if (orgError) {
-      console.error("Error adding user to organization:", orgError);
+    if (userOrgError) {
+      console.error("Error adding user to organization:", userOrgError);
       return NextResponse.json(
         { success: false, message: "Failed to add user to organization" },
         { status: 500 }
