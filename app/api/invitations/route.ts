@@ -17,9 +17,8 @@ async function sendInvitationEmail(
     // Set the API key from environment variable
     sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
     
-    // Create the full invitation URL
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const fullInvitationUrl = `${baseUrl}${invitationLink}`;
+    // invitationLink is already the complete URL, use it directly
+    const fullInvitationUrl = invitationLink;
     
     // Create email message
     const msg = {
@@ -171,7 +170,7 @@ export async function POST(request: NextRequest) {
       // If the RPC function exists and worked, use its result
       if (!rpcError && rpcResult) {
         // Success path - invitation was created via RPC
-        const invitationLink = `${process.env.NEXT_PUBLIC_APP_URL || ''}/invitations/accept?token=${token}`;
+        const invitationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/invitations/accept?token=${token}`;
 
         // Send email notification
         await sendInvitationEmail(
@@ -249,7 +248,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Success path - invitation was created
-      const invitationLink = `${process.env.NEXT_PUBLIC_APP_URL || ''}/invitations/accept?token=${token}`;
+      const invitationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/invitations/accept?token=${token}`;
 
       // Send email notification
       await sendInvitationEmail(
