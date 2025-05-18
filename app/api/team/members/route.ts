@@ -56,9 +56,9 @@ export async function GET(request: NextRequest) {
           id,
           name
         ),
-        profiles:user_id (
+        users:user_id (
           email,
-          full_name
+          user_metadata
         )
       `)
       .eq("organization_id", organizationId)
@@ -77,8 +77,8 @@ export async function GET(request: NextRequest) {
     const formattedMembers = members.map((member) => ({
       id: member.id,
       user_id: member.user_id,
-      email: member.profiles?.email || "No email available",
-      full_name: member.profiles?.full_name || "Unknown User",
+      email: member.users?.email || "No email available",
+      full_name: member.users?.user_metadata?.full_name || "Unknown User",
       role_id: member.role_id,
       role_name: member.system_roles?.name || "Member",
       joined_at: member.joined_at

@@ -82,25 +82,28 @@ export default function InvitedUserRegistration() {
     setLoading(true);
 
     try {
-      // Sign up the user without creating a new organization
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            // Don't set an organization ID - user will join the invited org
-          }
-        }
+      // Register directly using a special endpoint that doesn't create an organization
+      const response = await fetch('/api/auth/invited-signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          fullName,
+          invitationToken: token
+        }),
       });
 
-      if (signUpError) {
-        throw new Error(signUpError.message);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to create account');
       }
 
-      // Now redirect to the invitation acceptance page
-      // The token is still in the URL, so we can just redirect to the accept page
-      router.push(`/invitations/accept?token=${token}&registered=true`);
+      // On success, redirect to login page so they can sign in with their new credentials
+      router.push(`/login?registered=true&email=${encodeURIComponent(email)}&message=${encodeURIComponent('Account created successfully. Please sign in to complete your invitation.')}`);
       
     } catch (err) {
       console.error("Registration error:", err);
