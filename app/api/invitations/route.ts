@@ -371,6 +371,7 @@ export async function GET(request: NextRequest) {
           )
         `)
         .eq("organization_id", organizationId)
+        .eq("accepted", false) // Only show pending invitations
         .order("created_at", { ascending: false });
 
       if (invitationsError) {

@@ -125,101 +125,123 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase]);
 
   const fetchUserTenants = async (
-    supabase: SupabaseClient,
-    user: User
-  ) => {
-    try {
-      console.log("Auth provider: Fetching tenants for user:", user.id);
-      
-      // Set a timeout to abort if it takes too long
-      const fetchTimeout = setTimeout(() => {
-        // If this times out, we'll just use an empty tenant list
-        console.log("Auth provider: Tenant fetch timed out - using defaults");
-        setTenants([]);
-        setTenant(null);
-      }, 3000);
-      
-      // For a brand new user, create a default organization if none exists
-      const organizationName = user.user_metadata?.full_name 
-        ? `${user.user_metadata.full_name}'s Organization` 
-        : "My Organization";
-        
-      // Default tenant for new users
-      const defaultTenant = {
-        organizationId: "default",
-        organizationName: organizationName,
-        organizationType: "service_provider",
-        clientOrganizationId: null,
-        clientOrganizationName: null,
-        role: "owner",
-        roleName: "Owner",
-        permissions: ["*"],
-      };
-      
-      // Fetch user's organizations with role information
-      const { data: userOrgs, error } = await supabase
-        .from('user_organizations')
-        .select(`
-          organization_id,
-          role_id,
-          organizations (
-            id,
-            name,
-            organization_type
-          ),
-          system_roles (
-            id,
-            name,
-            permissions
-          )
-        `)
-        .eq('user_id', user.id);
-
-      clearTimeout(fetchTimeout);
-
-      if (error) {
-        console.error('Auth provider: Error fetching user organizations:', error);
-        // Instead of failing, use the default tenant
-        setTenants([defaultTenant]);
-        setTenant(defaultTenant);
-        return;
-      }
-
-      console.log(`Auth provider: Found ${userOrgs?.length || 0} organizations for user`);
-
-      if (userOrgs && userOrgs.length > 0) {
-        const tenantsList = userOrgs.map((userOrg) => ({
-          organizationId: userOrg.organization_id,
-          organizationName: userOrg.organizations?.name || 'Unknown Organization',
-          organizationType: userOrg.organizations?.organization_type || 'service_provider',
-          clientOrganizationId: null,
-          clientOrganizationName: null,
-          role: userOrg.role_id || 'member',
-          roleName: userOrg.system_roles?.name || 'Member',
-          permissions: userOrg.system_roles?.permissions || [],
-        }));
-        
-        setTenants(tenantsList);
-        console.log("Auth provider: Set tenants list with length:", tenantsList.length);
-        
-        // Simplify tenant selection - just use the first one for now
-        const activeTenant = tenantsList[0];
-        console.log("Auth provider: Using first tenant as active:", activeTenant.organizationName);
-        
-        // Set the tenant and exit early
-        setTenant(activeTenant);
-      } else {
-        console.log("Auth provider: No organizations found, using default tenant");
-        setTenants([defaultTenant]);
-        setTenant(defaultTenant);
-      }
-    } catch (error) {
-      console.error('Auth provider: Error in fetchUserTenants:', error);
-      // Don't fail the auth - just use an empty tenant
+  supabase: SupabaseClient,
+  user: User
+) => {
+  try {
+    console.log("Auth provider: Fetching tenants for user:", user.id);
+    
+    // Set a timeout to abort if it takes too long
+    const fetchTimeout = setTimeout(() => {
+      console.log("Auth provider: Tenant fetch timed out - using defaults");
       setTenants([]);
       setTenant(null);
+    }, 3000);
+    
+    // For a brand new user, create a default organization if none exists
+    const organizationName = user.user_metadata?.full_name 
+      ? `${user.user_metadata.full_name}'s Organization` 
+      : "My Organization";
+      
+    // Default tenant for new users
+    const defaultTenant = {
+      organizationId: "default",
+      organizationName: organizationName,
+      organizationType: "service_provider",
+      clientOrganizationId: null,
+      clientOrganizationName: null,
+      role: "owner",
+      roleName: "Owner",
+      permissions: ["*"],
+    };
+    
+    // First, get the user's organization IDs
+    const { data: userOrgs, error: userOrgsError } = await supabase
+      .from('user_organizations')
+      .select(`
+        id,
+        organization_id,
+        role_id
+      `)
+      .eq('user_id', user.id);
+
+    if (userOrgsError) {
+      console.error('Auth provider: Error fetching user organizations:', userOrgsError);
+      clearTimeout(fetchTimeout);
+      setTenants([defaultTenant]);
+      setTenant(defaultTenant);
+      return;
     }
-  };
+
+    if (!userOrgs || userOrgs.length === 0) {
+      console.log("Auth provider: No organizations found, using default tenant");
+      clearTimeout(fetchTimeout);
+      setTenants([defaultTenant]);
+      setTenant(defaultTenant);
+      return;
+    }
+
+    // Now fetch the organization details separately
+    const orgIds = userOrgs.map(org => org.organization_id);
+    const { data: organizations, error: orgsError } = await supabase
+      .from('organizations')
+      .select('id, name, organization_type')
+      .in('id', orgIds);
+
+    if (orgsError) {
+      console.error('Auth provider: Error fetching organizations:', orgsError);
+      clearTimeout(fetchTimeout);
+      setTenants([defaultTenant]);
+      setTenant(defaultTenant);
+      return;
+    }
+
+    // Fetch role details
+    const roleIds = userOrgs.map(org => org.role_id);
+    const { data: roles, error: rolesError } = await supabase
+      .from('system_roles')
+      .select('id, name, permissions')
+      .in('id', roleIds);
+
+    if (rolesError) {
+      console.error('Auth provider: Error fetching roles:', rolesError);
+    }
+
+    // Map the data together
+    const tenantsList = userOrgs.map(userOrg => {
+      const org = organizations?.find(o => o.id === userOrg.organization_id);
+      const role = roles?.find(r => r.id === userOrg.role_id);
+      
+      return {
+        organizationId: userOrg.organization_id,
+        organizationName: org?.name || 'Unknown Organization',
+        organizationType: org?.organization_type || 'service_provider',
+        clientOrganizationId: null,
+        clientOrganizationName: null,
+        role: userOrg.role_id || 'member',
+        roleName: role?.name || 'Member',
+        permissions: role?.permissions || [],
+      };
+    });
+
+    clearTimeout(fetchTimeout);
+    
+    console.log("Auth provider: Set tenants list with length:", tenantsList.length);
+    setTenants(tenantsList);
+    
+    // Simplify tenant selection - just use the first one for now
+    const activeTenant = tenantsList[0];
+    console.log("Auth provider: Using first tenant as active:", activeTenant.organizationName);
+    
+    // Set the tenant
+    setTenant(activeTenant);
+  } catch (error) {
+    console.error('Auth provider: Error in fetchUserTenants:', error);
+    // Don't fail the auth - just use an empty tenant
+    setTenants([]);
+    setTenant(null);
+  }
+};
 
   const switchTenant = async (tenantId: string) => {
     try {
