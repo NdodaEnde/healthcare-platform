@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
         id,
         user_id,
         role_id,
-        created_at as joined_at,
+        created_at,
         system_roles (
           id,
           name
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
           full_name: user?.user_metadata?.full_name || "Unknown User",
           role_id: member.role_id,
           role_name: member.system_roles?.name || "Member",
-          joined_at: member.joined_at
+          joined_at: member.created_at
         };
       });
     }
