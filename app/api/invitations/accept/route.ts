@@ -99,6 +99,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Log details for debugging
+    console.log("Adding user to organization:", {
+      userId: session.user.id,
+      organizationId: invitation.organization_id,
+      organizationName: invitation.organizations?.name || "Unknown",
+      roleId: invitation.role_id
+    });
+
     // 3. Start a transaction to ensure data consistency
     // First, add the user to the organization
     const { error: userOrgError } = await supabaseAdmin

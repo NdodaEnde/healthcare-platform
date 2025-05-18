@@ -87,10 +87,10 @@ export default function AcceptInvitationPage() {
       setSuccess(true);
       // Refresh the session to update the user's organizations
       await refreshSession();
-      // Redirect to the dashboard after a short delay
+      // Add a longer delay before redirecting
       setTimeout(() => {
         router.push("/dashboard");
-      }, 2000);
+      }, 3000); // Increased from 2000 to 3000 ms
     },
     onError: (error: Error) => {
       setError(error.message);
