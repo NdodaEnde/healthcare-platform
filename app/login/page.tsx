@@ -40,19 +40,30 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     const registered = params.get('registered');
     const emailParam = params.get('email');
+    const messageParam = params.get('message');
     
     if (registered === 'true') {
       console.log("Login page: Detected successful registration");
-      setSuccessMessage("Account created successfully! Please sign in with your credentials.");
+      
+      // Use custom message if provided, otherwise use default
+      if (messageParam) {
+        setSuccessMessage(decodeURIComponent(messageParam));
+      } else {
+        setSuccessMessage("Account created successfully! Please sign in with your credentials.");
+      }
       
       // If email was passed, pre-fill it
       if (emailParam) {
         setEmail(emailParam);
+        console.log("Login page: Pre-filled email from params:", emailParam);
       }
       
-      // Clean up the URL by removing the query parameters
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, newUrl);
+      // Clean up the URL by removing the query parameters, but do it after a short delay
+      // to ensure the parameters are fully processed
+      setTimeout(() => {
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+      }, 500);
     }
   }, []);
 
@@ -73,12 +84,24 @@ export default function LoginPage() {
       if (success) {
         console.log("Login page: Sign-in successful, redirecting to dashboard...");
         
-        // Simplest approach - just use window.location.href for reliable redirect
-        window.location.href = "/dashboard";
+        // Add a delay before redirecting to ensure session is properly established
+        // This helps prevent login loops by giving the auth state time to fully update
+        console.log("Login page: Adding delay before redirect to allow session to establish");
+        setTimeout(() => {
+          // Use replace instead of href to prevent back-button issues
+          window.location.replace("/dashboard");
+          
+          // As a backup, set another timeout
+          setTimeout(() => {
+            console.log("Login page: Backup redirect triggered");
+            window.location.href = "/dashboard";
+          }, 2000);
+        }, 1000);
       } else {
         // Handle unsuccessful login but no thrown error
         console.warn("Login page: Sign-in was unsuccessful");
         setError("Login failed. Please check your credentials and try again.");
+        setLoading(false);
       }
       
     } catch (err) {
@@ -88,7 +111,6 @@ export default function LoginPage() {
           ? err.message
           : "Failed to sign in. Please check your credentials."
       );
-    } finally {
       setLoading(false);
     }
   };
@@ -111,6 +133,16 @@ export default function LoginPage() {
             </CardHeader>
             <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
+              {successMessage && (
+                <div className="p-3 bg-green-100 text-green-800 rounded-md flex items-start space-x-2">
+                  <div className="shrink-0 h-5 w-5 mt-0.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <p>{successMessage}</p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
