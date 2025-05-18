@@ -202,14 +202,17 @@ export default function AcceptInvitationPage() {
           </CardHeader>
           <CardContent className="text-center py-4">
             <p className="text-sm text-muted-foreground mb-6">
-              Please log in to accept this invitation.
+              Please log in to accept this invitation or create a new account.
             </p>
             <div className="flex flex-col gap-2">
               <Button onClick={handleLoginRedirect}>
                 <LogIn className="h-4 w-4 mr-2" />
                 Log In
               </Button>
-              <Button variant="outline" onClick={() => router.push("/register")}>
+              <Button 
+                variant="outline" 
+                onClick={() => router.push(`/invitations/register?token=${token}`)}
+              >
                 <UserPlus className="h-4 w-4 mr-2" />
                 Create Account
               </Button>
