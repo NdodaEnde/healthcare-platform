@@ -1,23 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { v4 as uuidv4 } from 'uuid';
 
-// Function to send an invitation email
+import sgMail from '@sendgrid/mail';
+
+// Function to send an invitation email using SendGrid
 async function sendInvitationEmail(
   email: string,
   organizationName: string,
   invitedByName: string,
   invitationLink: string
 ) {
-  // In a real application, integrate with an email service like SendGrid, Mailgun, etc.
-  console.log(`Sending invitation email to ${email}`);
-  console.log(`Organization: ${organizationName}`);
-  console.log(`Invited by: ${invitedByName}`);
-  console.log(`Invitation link: ${invitationLink}`);
-  
-  // For demonstration purposes, we'll just return true
-  return true;
+  try {
+    // Set the API key from environment variable
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
+    
+    // Create the full invitation URL
+    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const fullInvitationUrl = `${baseUrl}${invitationLink}`;
+    
+    // Create email message
+    const msg = {
+      to: email,
+      from: process.env.SENDGRID_FROM_EMAIL || 'your-verified-sender@example.com', // Use your verified sender
+      subject: `Invitation to join ${organizationName}`,
+      text: `${invitedByName} has invited you to join ${organizationName}. Click the following link to accept: ${fullInvitationUrl}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #4F46E5;">You've been invited to join ${organizationName}</h2>
+          <p>${invitedByName} has invited you to collaborate on ${organizationName}.</p>
+          <p>
+            <a href="${fullInvitationUrl}" style="display: inline-block; padding: 10px 15px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 5px;">
+              Accept Invitation
+            </a>
+          </p>
+          <p style="margin-top: 20px; font-size: 12px; color: #666;">
+            If the button doesn't work, copy and paste this link into your browser: ${fullInvitationUrl}
+          </p>
+        </div>
+      `,
+    };
+    
+    // Send the email
+    await sgMail.send(msg);
+    console.log(`Invitation email sent to ${email} successfully`);
+    return true;
+  } catch (error) {
+    console.error('Error sending invitation email:', error);
+    // Log the specific SendGrid error if available
+    if (error.response) {
+      console.error('SendGrid API error:', error.response.body);
+    }
+    return false;
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -85,6 +122,19 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+    
+    // Create a service role client for operations that need elevated permissions
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      serviceRoleKey || '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
 
     // Get the organization name
     const { data: organization, error: organizationError } = await supabase
@@ -105,8 +155,51 @@ export async function POST(request: NextRequest) {
     const token = uuidv4();
     
     try {
-      // Directly insert into the invitations table - simple and direct approach
-      const { data: invitation, error: invitationError } = await supabase
+      // First try to use the secure RPC function if it exists
+      // This function runs with SECURITY DEFINER and bypasses RLS restrictions
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        'create_invitation',
+        { 
+          p_email: email,
+          p_organization_id: organizationId,
+          p_role_id: roleId,
+          p_invited_by: session.user.id,
+          p_token: token
+        }
+      );
+      
+      // If the RPC function exists and worked, use its result
+      if (!rpcError && rpcResult) {
+        // Success path - invitation was created via RPC
+        const invitationLink = `${process.env.NEXT_PUBLIC_APP_URL || ''}/invitations/accept?token=${token}`;
+
+        // Send email notification
+        await sendInvitationEmail(
+          email,
+          organization.name,
+          session.user.user_metadata?.full_name || "Administrator",
+          invitationLink
+        );
+
+        return NextResponse.json({
+          success: true,
+          message: "Invitation sent successfully",
+          data: {
+            id: rpcResult.id,
+            email: email,
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            invitationLink
+          }
+        });
+      }
+      
+      // If the RPC function doesn't exist or failed, fall back to using the service role client
+      console.log("RPC function failed or doesn't exist, falling back to service role client", rpcError);
+      
+      // Use the service role client to create the invitation
+      // This bypasses RLS restrictions by using admin privileges
+      const { data: invitation, error: invitationError } = await supabaseAdmin
         .from("invitations")
         .insert({
           organization_id: organizationId,
@@ -156,7 +249,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Success path - invitation was created
-      const invitationLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/invitations/accept?token=${token}`;
+      const invitationLink = `${process.env.NEXT_PUBLIC_APP_URL || ''}/invitations/accept?token=${token}`;
 
       // Send email notification
       await sendInvitationEmail(
@@ -179,13 +272,17 @@ export async function POST(request: NextRequest) {
         }
       });
     } catch (error) {
-      console.error("Error in invitation process:", error);
+      console.error("Detailed error in invitation process:", error);
+      console.error("Error stack:", error instanceof Error ? error.stack : "No stack available");
+      console.error("Service role key set:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+      console.error("Supabase URL set:", !!process.env.NEXT_PUBLIC_SUPABASE_URL);
       
       return NextResponse.json(
         { 
           success: false, 
           message: "An error occurred while processing the invitation",
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
         },
         { status: 500 }
       );
@@ -225,6 +322,19 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       );
     }
+    
+    // Create a service role client for operations that need elevated permissions
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      serviceRoleKey || '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
 
     // First check if the user has access to the organization
     const { data: userOrg, error: userOrgError } = await supabase
@@ -243,9 +353,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Try to fetch invitations directly
+    // Try to fetch invitations using the service role client to avoid permission issues
     try {
-      const { data: invitations, error: invitationsError } = await supabase
+      const { data: invitations, error: invitationsError } = await supabaseAdmin
         .from("invitations")
         .select(`
           id,

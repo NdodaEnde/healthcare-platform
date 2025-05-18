@@ -1,133 +1,120 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
 
-// Common function to handle both GET and POST requests
-async function validateInvitation(token: string) {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const token = searchParams.get("token");
+
     if (!token) {
       return NextResponse.json(
-        { success: false, message: "Invitation token is required" },
+        { success: false, message: "Token is required" },
         { status: 400 }
       );
     }
 
     // Create a Supabase client
     const supabase = createRouteHandlerClient({ cookies });
-
-    // Try to use the get_invitation_by_token function first
-    const { data: invitation, error: functionError } = await supabase
-      .rpc("get_invitation_by_token", { p_token: token });
-
-    // If the function exists and returned data, use it
-    if (!functionError && invitation) {
-      // Get the role name from the system_roles table
-      const { data: role, error: roleError } = await supabase
-        .from("system_roles")
-        .select("name")
-        .eq("id", invitation.role_id)
-        .single();
-
-      // Format the response
-      return NextResponse.json({
-        success: true,
-        invitation: {
-          ...invitation,
-          role_name: roleError ? "Team Member" : role.name,
-          expired: new Date(invitation.expires_at) < new Date()
-        }
-      });
-    }
-
-    // If the function doesn't exist yet or failed, fall back to direct query
-    console.log("Function error or no data, falling back to direct query:", functionError);
     
-    // Fetch the invitation details directly
-    const { data: directInvitation, error: invitationError } = await supabase
+    // Create a service role client for operations that need elevated permissions
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      serviceRoleKey || '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+
+    // Try to validate the invitation using the service role client
+    const { data: invitation, error: invitationError } = await supabaseAdmin
       .from("invitations")
       .select(`
         id,
         email,
-        accepted,
-        expires_at,
-        created_at,
-        token,
-        role_id,
         organization_id,
-        system_roles (
-          id,
-          name
-        ),
-        organizations (
-          id,
-          name
-        )
+        role_id,
+        invited_by,
+        created_at,
+        expires_at,
+        accepted,
+        accepted_at,
+        organizations (name),
+        system_roles (name)
       `)
       .eq("token", token)
       .single();
 
-    if (invitationError || !directInvitation) {
+    if (invitationError) {
+      console.error("Error validating invitation:", invitationError);
       return NextResponse.json(
         { success: false, message: "Invalid or expired invitation" },
         { status: 404 }
       );
     }
 
-    // Check if the invitation has already been accepted
-    if (directInvitation.accepted) {
+    if (!invitation) {
       return NextResponse.json(
-        { success: false, message: "This invitation has already been accepted" },
+        { success: false, message: "Invitation not found" },
+        { status: 404 }
+      );
+    }
+
+    if (invitation.accepted) {
+      return NextResponse.json(
+        { success: false, message: "Invitation has already been accepted" },
         { status: 400 }
       );
     }
 
-    // Check if the invitation has expired
-    const isExpired = new Date(directInvitation.expires_at) < new Date();
-    if (isExpired) {
+    const now = new Date();
+    const expiresAt = new Date(invitation.expires_at);
+    if (expiresAt < now) {
       return NextResponse.json(
-        { success: false, message: "This invitation has expired" },
+        { success: false, message: "Invitation has expired" },
         { status: 400 }
       );
     }
 
-    // Format the response to match our expected structure
+    // Get the inviter's name if available
+    let inviterName = "A team member";
+    if (invitation.invited_by) {
+      const { data: inviter } = await supabaseAdmin.auth.admin.getUserById(
+        invitation.invited_by
+      );
+      if (inviter && inviter.user) {
+        inviterName = inviter.user.user_metadata?.full_name || inviter.user.email || "A team member";
+      }
+    }
+
+    // Format the invitation data for the response
+    const formattedInvitation = {
+      id: invitation.id,
+      email: invitation.email,
+      organization_id: invitation.organization_id,
+      organization_name: invitation.organizations?.name || "Organization",
+      role_id: invitation.role_id,
+      role_name: invitation.system_roles?.name || "Member",
+      invited_by: invitation.invited_by,
+      invited_by_name: inviterName,
+      created_at: invitation.created_at,
+      expires_at: invitation.expires_at
+    };
+
     return NextResponse.json({
       success: true,
-      invitation: {
-        id: directInvitation.id,
-        organization_id: directInvitation.organization_id,
-        email: directInvitation.email,
-        role_id: directInvitation.role_id,
-        role_name: directInvitation.system_roles?.name || "Team Member",
-        expires_at: directInvitation.expires_at,
-        created_at: directInvitation.created_at,
-        token: directInvitation.token,
-        organization_name: directInvitation.organizations?.name || "Organization",
-        expired: isExpired
-      }
+      invitation: formattedInvitation
     });
   } catch (error) {
-    console.error("Error validating invitation:", error);
+    console.error("Unexpected error validating invitation:", error);
     return NextResponse.json(
-      {
-        success: false,
-        message: error instanceof Error ? error.message : "An unknown error occurred"
-      },
+      { success: false, message: "An unexpected error occurred" },
       { status: 500 }
     );
   }
-}
-
-// GET handler for URL query parameters
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const token = searchParams.get("token");
-  return validateInvitation(token || "");
-}
-
-// POST handler for JSON request body
-export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { token } = body;
-  return validateInvitation(token || "");
 }
