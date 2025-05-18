@@ -22,9 +22,13 @@ export async function GET(request: NextRequest) {
     console.log("Dashboard API: Creating Supabase client to verify auth");
     const supabase = createRouteHandlerClient({ cookies });
     
+    // Define session outside the try-catch block so it's accessible throughout the function
+    let session;
+    
     try {
       console.log("Dashboard API: Getting session");
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data } = await supabase.auth.getSession();
+      session = data.session;
   
       if (!session) {
         console.log("Dashboard API: No session found");
