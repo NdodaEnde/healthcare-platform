@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, UserPlus, AlertCircle, Mail } from "lucide-react";
+import { Loader2, UserPlus, AlertCircle, Mail, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { MembersTable } from "./members-table";
@@ -14,6 +15,7 @@ import { InviteUserDialog } from "./invite-user-dialog";
 export default function TeamPage() {
   const { user, tenant } = useAuth();
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
+  const router = useRouter();
   
   // Known roles for simulation mode
   const [roles] = useState([
@@ -148,6 +150,17 @@ export default function TeamPage() {
     <div className="container py-8 space-y-8">
       <div className="flex justify-between items-center">
         <div>
+          <div className="flex items-center space-x-4 mb-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => router.push('/dashboard')}
+              className="flex items-center"
+            >
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              Back to Dashboard
+            </Button>
+          </div>
           <h2 className="text-3xl font-bold tracking-tight">Team Management</h2>
           <p className="text-muted-foreground">
             Manage your organization members and invitations
