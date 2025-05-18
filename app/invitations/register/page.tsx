@@ -92,7 +92,9 @@ export default function InvitedUserRegistration() {
           email,
           password,
           fullName,
-          invitationToken: token
+          invitationToken: token,
+          organizationId: invitationDetails?.organization_id,
+          roleId: invitationDetails?.role_id
         }),
       });
 
@@ -159,7 +161,12 @@ export default function InvitedUserRegistration() {
             <CardTitle className="text-2xl font-bold">Complete Registration</CardTitle>
             <CardDescription>
               {invitationDetails ? (
-                <>You've been invited to join <span className="font-semibold">{invitationDetails.organization_name}</span></>
+                <>
+                  You've been invited to join <span className="font-semibold">{invitationDetails.organization_name}</span> 
+                  {invitationDetails.role_name && (
+                    <> as a <span className="font-semibold">{invitationDetails.role_name.toLowerCase()}</span></>
+                  )}
+                </>
               ) : (
                 "Create your account to accept the invitation"
               )}
@@ -167,6 +174,11 @@ export default function InvitedUserRegistration() {
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
+              {invitationDetails && (
+                <div className="p-3 bg-primary/10 rounded-md text-sm">
+                  <p>You're creating an account to join <strong>{invitationDetails.organization_name}</strong> with the role of <strong>{invitationDetails.role_name}</strong>.</p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input

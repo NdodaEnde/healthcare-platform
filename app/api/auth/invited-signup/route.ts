@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, fullName, invitationToken } = await request.json();
+    const { email, password, fullName, invitationToken, organizationId, roleId } = await request.json();
 
     // Validate input
     if (!email || !password || !fullName || !invitationToken) {
@@ -66,6 +66,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get the organization name
+    const { data: organization, error: orgError } = await supabaseAdmin
+      .from("organizations")
+      .select("name")
+      .eq("id", invitation.organization_id)
+      .single();
+    
+    // Get the role name
+    const { data: role, error: roleError } = await supabaseAdmin
+      .from("system_roles")
+      .select("name")
+      .eq("id", invitation.role_id)
+      .single();
+
     // 3. Create the user account
     const { data: userData, error: userError } = await supabaseAdmin.auth.admin.createUser({
       email,
@@ -75,7 +89,9 @@ export async function POST(request: NextRequest) {
         full_name: fullName,
         // Store the invitation info so we can process it on first login
         invitation_token: invitationToken,
-        invited_organization_id: invitation.organization_id
+        invited_organization_id: invitation.organization_id,
+        organization_name: organization?.name || "Unknown Organization",
+        role_name: role?.name || "Member"
       }
     });
 
