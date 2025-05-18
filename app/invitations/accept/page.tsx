@@ -42,11 +42,18 @@ export default function AcceptInvitationPage() {
           return;
         }
 
+        // Extract invitation data from the response, using the invitation property
+        const invitation = data.invitation;
+        if (!invitation) {
+          setError("Invalid invitation data");
+          return;
+        }
+        
         setInvitationDetails({
-          email: data.email,
-          organizationName: data.organizationName,
-          roleName: data.roleName,
-          expired: data.expired
+          email: invitation.email,
+          organizationName: invitation.organization_name,
+          roleName: invitation.role_name,
+          expired: false // This is checked separately in the API
         });
       } catch (error) {
         setError("Failed to fetch invitation details");
@@ -190,7 +197,7 @@ export default function AcceptInvitationPage() {
           <CardHeader>
             <CardTitle>Join Organization</CardTitle>
             <CardDescription>
-              You&apos;ve been invited to join {invitationDetails.organizationName} as a {invitationDetails.roleName.toLowerCase()}.
+              You&apos;ve been invited to join {invitationDetails.organizationName} as a {invitationDetails.roleName ? invitationDetails.roleName.toLowerCase() : 'member'}.
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center py-4">
@@ -248,7 +255,7 @@ export default function AcceptInvitationPage() {
         <CardHeader>
           <CardTitle>Join Organization</CardTitle>
           <CardDescription>
-            You&apos;ve been invited to join {invitationDetails.organizationName} as a {invitationDetails.roleName.toLowerCase()}.
+            You&apos;ve been invited to join {invitationDetails.organizationName} as a {invitationDetails.roleName ? invitationDetails.roleName.toLowerCase() : 'member'}.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-center py-4">
