@@ -51,33 +51,37 @@ export async function GET(
       );
     }
 
-    // Verify user has access to this document's organization
-    const { data: memberData, error: memberError } = await supabase
-      .from("organization_members")
-      .select("role")
-      .eq("user_id", session.user.id)
-      .eq("organization_id", document.organization_id)
-      .single();
-
-    if (memberError || !memberData) {
-      return NextResponse.json(
-        { success: false, message: "You don't have access to this document" },
-        { status: 403 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      document
+    // Check if user is an administrator from user metadata
+    const { data: userData } = await supabase.auth.getUser();
+    const isAdmin = userData?.user?.user_metadata?.role_id === 'admin';
+    console.log("User role_id check (document detail):", {
+      userId: session.user.id,
+      role_id: userData?.user?.user_metadata?.role_id,
+      isAdmin,
+      documentId,
+      organizationId: document.organization_id
     });
-  } catch (error) {
-    console.error("Document fetch error:", error);
+    
+    // If not admin, verify user has access to this document's organization
+    // If not admin, verify user has access to this organization
+if (!isAdmin) {
+  const { data: memberData, error: memberError } = await supabase
+    .from("user_organizations")  // CHANGED: was "organization_members"
+    .select("role_id")           // CHANGED: was "role"
+    .eq("user_id", session.user.id)
+    .eq("organization_id", organizationId)
+    .single();
+  
+  if (memberError || !memberData) {
+    console.log("Membership check failed:", {
+      error: memberError,
+      userId: session.user.id,
+      organizationId
+    });
+    
     return NextResponse.json(
-      { 
-        success: false, 
-        message: error instanceof Error ? error.message : "An unknown error occurred" 
-      },
-      { status: 500 }
+      { success: false, message: "You don't have access to this organization" },
+      { status: 403 }
     );
   }
 }

@@ -3,7 +3,7 @@ import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { v4 as uuidv4 } from "uuid";
 
-const API_URL = process.env.DOCUMENT_PROCESSOR_API_URL || "http://localhost:3001";
+const API_URL = process.env.DOCUMENT_PROCESSOR_API_URL || "http://localhost:5001";
 
 export async function POST(request: NextRequest) {
   try {
@@ -96,23 +96,40 @@ export async function POST(request: NextRequest) {
         throw new Error(`Failed to create document record: ${dbError.message}`);
       }
 
-      // Queue document for processing via the NestJS coordinator service
-      const processingResponse = await fetch(`${API_URL}/api/documents/process`, {
+      // Download the file for processing
+      const fileResponse = await fetch(urlData.publicUrl);
+      const fileBlob = await fileResponse.blob();
+      
+      // Create a FormData object to send the file to the document processor
+      const processingFormData = new FormData();
+      processingFormData.append('files', fileBlob, file.name);
+      
+      // Send to our document processing microservice
+      const processingResponse = await fetch(`${API_URL}/process-documents`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({
-          documentId,
-          organizationId,
-          fileUrl: urlData.publicUrl
-        })
+        body: processingFormData
       });
 
       if (!processingResponse.ok) {
         const errorData = await processingResponse.json();
         throw new Error(`Failed to queue document for processing: ${errorData.message}`);
+      }
+      
+      // Store the batch ID in our database
+      const processingData = await processingResponse.json();
+      const { data: updateData, error: updateError } = await supabase
+        .from("documents")
+        .update({
+          status: "processing",
+          metadata: {
+            batch_id: processingData.batch_id,
+            processing_time: processingData.processing_time_seconds
+          }
+        })
+        .eq("id", documentId);
+        
+      if (updateError) {
+        console.error("Failed to update document with batch ID:", updateError);
       }
 
       documentIds.push(documentId);

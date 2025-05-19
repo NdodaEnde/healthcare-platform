@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { File, ArrowUpRight, Loader2, AlertCircle } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,24 +23,75 @@ interface Document {
 
 export function DocumentList() {
   const { user, tenant } = useAuth();
-
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["documents", tenant?.organizationId],
-    queryFn: async () => {
-      if (!tenant) return { documents: [] };
-
-      const response = await fetch(`/api/documents?organizationId=${tenant.organizationId}`, {
-        // No need to manually add authorization headers
+  const [isSettingAdmin, setIsSettingAdmin] = useState(false);
+  
+  // Function to set current user as admin
+  const setAdminRole = async () => {
+    try {
+      setIsSettingAdmin(true);
+      const response = await fetch('/api/auth/set-admin-role', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch documents");
+      
+      if (response.ok) {
+        // Force reload to apply new role
+        window.location.reload();
+      } else {
+        console.error('Failed to set admin role:', await response.json());
+        alert('Failed to set admin role. See console for details.');
       }
+    } catch (error) {
+      console.error('Error setting admin role:', error);
+    } finally {
+      setIsSettingAdmin(false);
+    }
+  };
 
-      return response.json();
-    },
-    enabled: !!tenant && !!user,
-  });
+  // In document-list.tsx
+const { data, isLoading, isError, error } = useQuery({
+  queryKey: ["documents", tenant?.organizationId],
+  queryFn: async () => {
+    if (!tenant) return { documents: [] };
+    
+    // Check if the user has the admin role or admin permissions
+    const isAdmin = 
+      // Check metadata role
+      user?.user_metadata?.role === 'admin' || 
+      // Check if role ID is admin
+      tenant.role === 'admin' ||
+      // Check if the user has the manage:all permission
+      (tenant.permissions && tenant.permissions.some(p => 
+        p === 'manage:all' || p === '*'
+      ));
+    
+    console.log("Document List: Using endpoint", {
+      isAdmin,
+      endpoint: isAdmin 
+        ? `/api/admin/documents?organizationId=${tenant.organizationId}`
+        : `/api/documents?organizationId=${tenant.organizationId}`,
+      role: user?.user_metadata?.role,
+      tenantRole: tenant.role,
+      permissions: tenant.permissions
+    });
+    
+    // Use the admin endpoint for admins, regular endpoint for others
+    const response = await fetch(
+      isAdmin 
+        ? `/api/admin/documents?organizationId=${tenant.organizationId}`
+        : `/api/documents?organizationId=${tenant.organizationId}`
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch documents");
+    }
+
+    return response.json();
+  },
+  enabled: !!tenant && !!user,
+});
 
   if (isLoading) {
     return (
@@ -63,6 +115,38 @@ export function DocumentList() {
 
   const documents = data?.documents || [];
 
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 text-center">
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <h3 className="text-lg font-medium">Error Loading Documents</h3>
+        <p className="text-muted-foreground mt-2 mb-4">
+          {error instanceof Error ? error.message : "Failed to load documents"}
+        </p>
+        <p className="text-muted-foreground mb-6">
+          This may be due to permission issues. Try setting your account as an admin.
+        </p>
+        <Button 
+          onClick={setAdminRole} 
+          disabled={isSettingAdmin}
+          className="mb-4"
+        >
+          {isSettingAdmin ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Setting Admin Role...
+            </>
+          ) : (
+            <>Set As Admin</>
+          )}
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/dashboard">Return to Dashboard</Link>
+        </Button>
+      </div>
+    );
+  }
+
   if (documents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-8 text-center">
@@ -71,8 +155,25 @@ export function DocumentList() {
         <p className="text-muted-foreground mt-2 mb-6">
           Upload your first document to start processing medical certificates.
         </p>
-        <Button asChild>
+        <Button asChild className="mb-4">
           <Link href="/documents/upload">Upload Documents</Link>
+        </Button>
+        
+        {/* Admin role setter */}
+        <Button 
+          onClick={setAdminRole} 
+          disabled={isSettingAdmin}
+          variant="outline"
+          size="sm"
+        >
+          {isSettingAdmin ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Setting Admin Role...
+            </>
+          ) : (
+            <>Set As Admin</>
+          )}
         </Button>
       </div>
     );

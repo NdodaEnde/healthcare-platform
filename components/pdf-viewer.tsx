@@ -11,19 +11,32 @@ import { Card, CardContent } from "@/components/ui/card";
 // Set up the worker for PDF.js
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
+interface Highlight {
+  page: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  color?: string;
+}
+
 interface PdfViewerProps {
   fileUrl: string;
+  highlights?: Highlight[];
   onPageRendered?: (pageNumber: number, totalPages: number) => void;
 }
 
-export function PdfViewer({ fileUrl, onPageRendered }: PdfViewerProps) {
+export function PdfViewer({ fileUrl, highlights = [], onPageRendered }: PdfViewerProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
   const [scale, setScale] = useState<number>(1.0);
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
+  const [pageHeight, setPageHeight] = useState<number | null>(null);
+  const [pageWidth, setPageWidth] = useState<number | null>(null);
   
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const pageRef = useRef<HTMLDivElement | null>(null);
   const [resizeRef, rect] = useResizeObserver();
 
   useEffect(() => {
@@ -31,6 +44,15 @@ export function PdfViewer({ fileUrl, onPageRendered }: PdfViewerProps) {
       setContainerWidth(rect.width);
     }
   }, [rect]);
+
+  // Update page dimensions when the page is rendered
+  useEffect(() => {
+    if (pageRef.current) {
+      const { height, width } = pageRef.current.getBoundingClientRect();
+      setPageHeight(height);
+      setPageWidth(width);
+    }
+  }, [pageNumber, scale, rotation, containerWidth]);
 
   function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
     setNumPages(numPages);
@@ -105,31 +127,51 @@ export function PdfViewer({ fileUrl, onPageRendered }: PdfViewerProps) {
         }}
       >
         <div className="flex justify-center p-4">
-          <Document
-            file={fileUrl}
-            onLoadSuccess={onDocumentLoadSuccess}
-            loading={
-              <div className="flex items-center justify-center h-[600px]">
-                <div className="animate-pulse text-muted-foreground">Loading PDF...</div>
-              </div>
-            }
-            error={
-              <div className="flex items-center justify-center h-[600px]">
-                <div className="text-destructive">
-                  Error loading PDF. Please try again later.
+          <div className="relative" ref={pageRef}>
+            <Document
+              file={fileUrl}
+              onLoadSuccess={onDocumentLoadSuccess}
+              loading={
+                <div className="flex items-center justify-center h-[600px]">
+                  <div className="animate-pulse text-muted-foreground">Loading PDF...</div>
                 </div>
-              </div>
-            }
-          >
-            <Page
-              pageNumber={pageNumber}
-              scale={scale}
-              rotate={rotation}
-              width={containerWidth ? containerWidth - 50 : undefined}
-              renderTextLayer={false}
-              renderAnnotationLayer={false}
-            />
-          </Document>
+              }
+              error={
+                <div className="flex items-center justify-center h-[600px]">
+                  <div className="text-destructive">
+                    Error loading PDF. Please try again later.
+                  </div>
+                </div>
+              }
+            >
+              <Page
+                pageNumber={pageNumber}
+                scale={scale}
+                rotate={rotation}
+                width={containerWidth ? containerWidth - 50 : undefined}
+                renderTextLayer={false}
+                renderAnnotationLayer={false}
+              />
+              
+              {/* Render highlights */}
+              {pageHeight && pageWidth && highlights
+                .filter(h => h.page === pageNumber)
+                .map((highlight, index) => (
+                  <div
+                    key={index}
+                    className="absolute border-2 border-yellow-400 bg-yellow-200 bg-opacity-30 pointer-events-none"
+                    style={{
+                      left: `${highlight.left * pageWidth}px`,
+                      top: `${highlight.top * pageHeight}px`,
+                      width: `${(highlight.right - highlight.left) * pageWidth}px`,
+                      height: `${(highlight.bottom - highlight.top) * pageHeight}px`,
+                      borderColor: highlight.color || '#FFDC00',
+                      backgroundColor: highlight.color ? `${highlight.color}33` : 'rgba(255, 220, 0, 0.2)'
+                    }}
+                  />
+                ))}
+            </Document>
+          </div>
         </div>
       </CardContent>
     </Card>

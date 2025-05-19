@@ -138,6 +138,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setTenant(null);
     }, 3000);
     
+    // Define helper function for syncing membership with retries
+    const syncMembership = async (retryCount = 0, maxRetries = 3) => {
+      try {
+        console.log("Auth provider: Attempting to sync membership, attempt:", retryCount + 1);
+        
+        const syncResponse = await fetch('/api/auth/sync-membership', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (syncResponse.ok) {
+          console.log("Auth provider: Membership sync successful");
+          return true;
+        } else {
+          const errorData = await syncResponse.json();
+          console.warn("Auth provider: Membership sync failed", errorData);
+          
+          if (retryCount < maxRetries) {
+            // Exponential backoff - wait longer between retries
+            const backoffTime = Math.pow(2, retryCount) * 300; // 300, 600, 1200ms
+            console.log(`Auth provider: Retrying membership sync in ${backoffTime}ms`);
+            
+            await new Promise(resolve => setTimeout(resolve, backoffTime));
+            return syncMembership(retryCount + 1, maxRetries);
+          }
+          
+          return false;
+        }
+      } catch (syncError) {
+        console.error("Auth provider: Error syncing membership:", syncError);
+        return false;
+      }
+    };
+    
     // For a brand new user, create a default organization if none exists
     const organizationName = user.user_metadata?.full_name 
       ? `${user.user_metadata.full_name}'s Organization` 
@@ -229,9 +265,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log("Auth provider: Set tenants list with length:", tenantsList.length);
     setTenants(tenantsList);
     
+    // Check if user has active_organization_id in metadata
+    const hasOrgInMetadata = !!user.user_metadata?.active_organization_id;
+    
     // Simplify tenant selection - just use the first one for now
     const activeTenant = tenantsList[0];
     console.log("Auth provider: Using first tenant as active:", activeTenant.organizationName);
+    
+    // If user doesn't have an organization ID in metadata, update it first
+    if (!hasOrgInMetadata && activeTenant) {
+      console.log("Auth provider: Updating user metadata with active organization ID");
+      try {
+        await supabase.auth.updateUser({
+          data: { active_organization_id: activeTenant.organizationId }
+        });
+        
+        // Wait a moment for the metadata update to propagate
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (updateError) {
+        console.error("Auth provider: Error updating user metadata:", updateError);
+      }
+    }
+
+    // Now try to sync membership with retries
+    await syncMembership();
     
     // Set the tenant
     setTenant(activeTenant);

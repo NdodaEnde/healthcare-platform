@@ -7,6 +7,7 @@ import { ArrowLeft, Download, Loader2, RefreshCw, AlertCircle } from "lucide-rea
 
 import { Button } from "@/components/ui/button";
 import { PdfViewer } from "@/components/pdf-viewer";
+import { DocumentQA } from "@/components/document-qa";
 import { useAuth } from "@/components/providers/auth-provider";
 import { formatDate, formatBytes, isPdf } from "@/lib/utils";
 
@@ -36,6 +37,7 @@ export default function DocumentDetailPage() {
   const { user, tenant } = useAuth();
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(0);
+  const [highlights, setHighlights] = useState<any[]>([]);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["document", id],
@@ -73,6 +75,22 @@ export default function DocumentDetailPage() {
   function handlePageRendered(pageNumber: number, totalPages: number) {
     setCurrentPage(pageNumber);
     setTotalPages(totalPages);
+  }
+  
+  function handleAnswerReceived(answer: any) {
+    if (answer.best_chunks) {
+      // Convert evidence chunks to highlights
+      const newHighlights = answer.best_chunks.map((chunk: any) => ({
+        page: chunk.bbox.page,
+        left: chunk.bbox.left,
+        top: chunk.bbox.top,
+        right: chunk.bbox.right,
+        bottom: chunk.bbox.bottom,
+        color: "#FFDC00" // Yellow highlight
+      }));
+      
+      setHighlights(newHighlights);
+    }
   }
 
   function handleDownload() {
@@ -159,6 +177,7 @@ export default function DocumentDetailPage() {
               <div className="h-[700px]">
                 <PdfViewer
                   fileUrl={document.file_url}
+                  highlights={highlights}
                   onPageRendered={handlePageRendered}
                 />
               </div>
@@ -223,6 +242,26 @@ export default function DocumentDetailPage() {
               </div>
             </div>
 
+            {/* Q&A Section */}
+            <div className="border rounded-lg p-4">
+              <h2 className="text-lg font-medium mb-3">Document Q&A</h2>
+              {document.status === "completed" ? (
+                <DocumentQA 
+                  documentId={document.id} 
+                  onAnswerReceived={handleAnswerReceived}
+                />
+              ) : document.status === "failed" ? (
+                <p className="text-sm text-destructive">
+                  Processing failed. Unable to ask questions about this document.
+                </p>
+              ) : (
+                <div className="flex items-center text-sm text-muted-foreground">
+                  <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                  Document is still processing. Q&A will be available once processing is complete.
+                </div>
+              )}
+            </div>
+            
             {/* Certificates Section */}
             <div className="border rounded-lg p-4">
               <h2 className="text-lg font-medium mb-3">Certificates</h2>
